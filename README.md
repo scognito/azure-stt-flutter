@@ -71,9 +71,14 @@ final azureStt = AzureSpeechToText(
   subscriptionKey: 'YOUR_AZURE_KEY',
   region: 'westeurope', // or other supported region
   languages: ['en-US', 'es-ES'], // List of languages for detection
+  languageIdMode: LanguageIdMode.atStart, // Optional: atStart (default) or detectContinuous
   textClearTimeout: const Duration(seconds: 2),
 );
 ```
+
+*   **`languageIdMode`**:
+    *   `LanguageIdMode.atStart`: (Default) Identifies the language at the beginning of the speech. Supports up to **4 candidate languages**.
+    *   `LanguageIdMode.detectContinuous`: Continuously identifies the language throughout the speech. Supports up to **10 candidate languages**.
 
 ### Listening to Updates
 
