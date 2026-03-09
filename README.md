@@ -7,7 +7,7 @@ A Flutter package for real-time Speech-to-Text (transcription) using Microsoft A
 *   **Real-time Transcription**: Receive intermediate results (hypothesis) and finalized text as the user speaks.
 *   **Cross-Platform**: Supports Mobile (iOS, Android), Desktop (macOS, Windows, Linux), and Web.
 *   **Auto-Silence Timeout**: Automatically clears the text after a configurable period of silence.
-*   **Multi-Language**: Supports all languages provided by Azure Speech Services.
+*   **Multi-Language & LID**: Supports all languages provided by Azure Speech Services and continuous Language Identification (LID) for up to 10 languages.
 
 
 ## Example app
@@ -70,7 +70,7 @@ Initialize the `AzureSpeechToText` instance. You need a **Subscription Key**
 final azureStt = AzureSpeechToText(
   subscriptionKey: 'YOUR_AZURE_KEY',
   region: 'westeurope', // or other supported region
-  language: 'en-US',
+  languages: ['en-US', 'es-ES'], // List of languages for detection
   textClearTimeout: const Duration(seconds: 2),
 );
 ```

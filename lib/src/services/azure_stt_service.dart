@@ -19,7 +19,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 class AzureSttService {
   final String _subscriptionKey;
   final String _region;
-  final String _language;
+  final List<String> _languages;
   final bool _debug;
   final TranscriptionCubit _cubit;
   final MicrophoneService _micService;
@@ -36,14 +36,14 @@ class AzureSttService {
   AzureSttService({
     required String subscriptionKey,
     required String region,
-    String language = Constants.defaultLang,
+    List<String> languages = const [Constants.defaultLang],
     bool debug = false,
     required TranscriptionCubit cubit,
     required MicrophoneService micService,
     Duration? textClearTimeout,
   }) : _subscriptionKey = subscriptionKey,
        _region = region,
-       _language = language,
+       _languages = languages,
        _cubit = cubit,
        _debug = debug,
        _micService = micService,
@@ -75,7 +75,7 @@ class AzureSttService {
         final uri = Uri.parse('wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2')
             .replace(
               queryParameters: {
-                Constants.language: _language,
+                Constants.language: _languages.first,
                 Constants.format: 'simple',
                 Constants.authKey: _subscriptionKey,
                 Constants.connectionId: requestId,
@@ -92,7 +92,7 @@ class AzureSttService {
         }
 
         final uri = Uri.parse(
-          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2?language=$_language&format=simple',
+          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2?language=${_languages.first}&format=simple',
         );
 
         _channel = getWebSocketService().connect(
@@ -302,8 +302,10 @@ class AzureSttService {
 
   void _sendSpeechContext(String requestId) {
     final payload = {
-      "phraseDetection": {
-        "mode": "Conversation", // It is "recognition": "conversation" in speech.config
+      "phraseDetection": {"mode": "Conversation"},
+      "languageId": {
+        "mode": _languages.length > 1 ? "DetectContinuous" : "AtStart",
+        "languages": _languages,
       },
     };
     _sendTextFrame('speech.context', requestId, payload);

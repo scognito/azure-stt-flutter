@@ -32,7 +32,7 @@ class _MyAppState extends State<MyApp> {
     _azureSpeechToText = AzureSpeechToText(
       subscriptionKey: dotenv.env['AZURE_SUBSCRIPTION_KEY']!,
       region: dotenv.env['AZURE_REGION']!,
-      language: _currentLanguage,
+      languages: [_currentLanguage],
       debug: true,
     );
   }
