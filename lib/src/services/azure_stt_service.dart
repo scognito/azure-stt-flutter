@@ -6,6 +6,7 @@ import 'package:azure_stt_flutter/src/constants.dart';
 import 'package:azure_stt_flutter/src/cubit/transcription_cubit.dart';
 import 'package:azure_stt_flutter/src/models/azure_response.dart';
 import 'package:azure_stt_flutter/src/models/connection_message.dart';
+import 'package:azure_stt_flutter/src/models/language_id_mode.dart';
 import 'package:azure_stt_flutter/src/models/speech_connection_message.dart';
 import 'package:azure_stt_flutter/src/services/microphone_service.dart';
 import 'package:azure_stt_flutter/src/web_socket/web_socket_service_stub.dart'
@@ -20,6 +21,7 @@ class AzureSttService {
   final String _subscriptionKey;
   final String _region;
   final List<String> _languages;
+  final LanguageIdMode _languageIdMode;
   final bool _debug;
   final TranscriptionCubit _cubit;
   final MicrophoneService _micService;
@@ -37,6 +39,7 @@ class AzureSttService {
     required String subscriptionKey,
     required String region,
     List<String> languages = const [Constants.defaultLang],
+    LanguageIdMode languageIdMode = .atStart,
     bool debug = false,
     required TranscriptionCubit cubit,
     required MicrophoneService micService,
@@ -44,10 +47,20 @@ class AzureSttService {
   }) : _subscriptionKey = subscriptionKey,
        _region = region,
        _languages = languages,
+       _languageIdMode = languageIdMode,
        _cubit = cubit,
        _debug = debug,
        _micService = micService,
-       _textClearTimeout = textClearTimeout;
+       _textClearTimeout = textClearTimeout {
+    assert(
+      languageIdMode != .atStart || languages.length <= 4,
+      'AtStart mode supports at most 4 languages.',
+    );
+    assert(
+      languageIdMode != .detectContinuous || languages.length <= 10,
+      'DetectContinuous mode supports at most 10 languages.',
+    );
+  }
 
   Future<String?> _getAuthToken() async {
     final uri = Uri.parse('https://$_region.api.cognitive.microsoft.com/sts/v1.0/issueToken');
@@ -75,7 +88,7 @@ class AzureSttService {
         final uri = Uri.parse('wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2')
             .replace(
               queryParameters: {
-                Constants.language: _languages.first,
+                Constants.language: _languages.firstOrNull,
                 Constants.format: 'simple',
                 Constants.authKey: _subscriptionKey,
                 Constants.connectionId: requestId,
@@ -91,8 +104,9 @@ class AzureSttService {
           return;
         }
 
+        final language = _languages.firstOrNull ?? Constants.defaultLang;
         final uri = Uri.parse(
-          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2?language=${_languages.first}&format=simple',
+          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2?language=$language&format=simple',
         );
 
         _channel = getWebSocketService().connect(
@@ -303,10 +317,7 @@ class AzureSttService {
   void _sendSpeechContext(String requestId) {
     final payload = {
       "phraseDetection": {"mode": "Conversation"},
-      "languageId": {
-        "mode": _languages.length > 1 ? "DetectContinuous" : "AtStart",
-        "languages": _languages,
-      },
+      "languageId": {"mode": _languageIdMode.value, "languages": _languages},
     };
     _sendTextFrame('speech.context', requestId, payload);
   }
