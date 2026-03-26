@@ -1,3 +1,8 @@
+# 0.0.8
+
+- Added `LanguageUtils` class with `getSupportedLanguages()` and `maximizeLocale()` methods
+- Language codes are now automatically sanitized to `languageCode-countryCode` format (e.g., "en" → "en-US")
+
 # 0.0.7
 
 - Updated screenshots

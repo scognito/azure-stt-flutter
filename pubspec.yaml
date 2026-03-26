@@ -1,6 +1,6 @@
 name: azure_stt_flutter
-description: "A Flutter package for real-time Speech-to-Text transcription using Microsoft Azure Cognitive Services with BLoC/Cubit pattern. Supports Mobile, Desktop, and Web platforms"
-version: 0.0.7
+description: "A Flutter package for real-time Speech-to-Text transcription using Microsoft Azure Cognitive Services. Supports Mobile, Desktop, and Web platforms"
+version: 0.0.8
 homepage: https://github.com/scognito/azure-stt-flutter
 repository: https://github.com/scognito/azure-stt-flutter
 issue_tracker: https://github.com/scognito/azure-stt-flutter/issues
@@ -21,7 +21,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  melos: ^7.4.1
+  melos: ^7.5.0
   dart_code_metrics_presets: ^2.30.0
 
 melos:

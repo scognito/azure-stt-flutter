@@ -34,7 +34,9 @@ class _MyAppState extends State<MyApp> {
     LanguageIdMode languageIdMode = .atStart;
 
     if (_currentLanguage == 'autodetect') {
-      languages = ['it-IT', 'es-ES', 'nl-NL', 'en-US'];
+      // The SDK accepts only languages in the format languageCode-countryCode
+      // If the user uses only the language code, this package try to guess the country (fallback is 'en-US)
+      languages = ['it', 'es-ES', 'nl-NL', 'en-US'];
     } else if (_currentLanguage == 'continuous') {
       languages = [
         'en-US',
@@ -105,8 +107,8 @@ class TranscriptionPage extends StatelessWidget {
   const TranscriptionPage({required this.selectedLanguage, required this.onLanguageChanged});
 
   static const _languages = {
-    'en-US': 'English',
-    'it-IT': 'Italian',
+    'en-US': 'English', // The SDK accepts only languages in the format languageCode-countryCode
+    'it': 'Italian', // If the user uses only the language code, this package try to guess the country (fallback is 'en-US)
     'nl-NL': 'Dutch',
     'es-ES': 'Spanish',
     'autodetect': 'At Start (IT, ES, NL, EN)',
