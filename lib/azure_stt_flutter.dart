@@ -7,6 +7,7 @@
 library azure_stt_flutter;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:azure_stt_flutter/src/constants.dart';
 import 'package:azure_stt_flutter/src/cubit/transcription_cubit.dart';
@@ -82,13 +83,25 @@ class AzureSpeechToText {
   /// Returns whether the service is currently listening for speech.
   bool get isListening => _azureSttService.isListening();
 
-  /// Starts listening for speech input.
+  /// Starts the speech recognition session.
   ///
   /// Opens a WebSocket connection to Azure Speech Services and begins
-  /// capturing audio from the microphone. Transcription results are
-  /// emitted through [transcriptionStateStream].
-  Future<void> startListening() async {
-    await _azureSttService.startListening();
+  /// capturing audio. Transcription results are emitted through
+  /// [transcriptionStateStream].
+  ///
+  /// By default, audio is captured from the device microphone. You can instead
+  /// provide an [externalAudioStream] to supply your own audio source — for
+  /// example, audio coming from a VoIP call or a file.
+  ///
+  /// The stream must emit [Uint8List] chunks of raw PCM audio formatted as:
+  /// 16 kHz sample rate, mono channel, 16-bit little-endian samples.
+  /// This matches exactly the format that the microphone produces and that the
+  /// WAV header sent to Azure declares.
+  ///
+  /// If [externalAudioStream] is `null`, the device microphone is used as normal.
+  ///
+  Future<void> startListening({Stream<Uint8List>? externalAudioStream}) async {
+    await _azureSttService.startListening(externalAudioStream: externalAudioStream);
   }
 
   /// Stops listening for speech input.
