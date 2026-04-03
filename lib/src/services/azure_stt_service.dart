@@ -73,7 +73,15 @@ class AzureSttService {
     }
   }
 
-  Future<void> startListening() async {
+  /// Starts the speech recognition session.
+  ///
+  /// If [externalAudioStream] is provided, it is used as the audio source
+  /// instead of the device microphone. The stream must emit [Uint8List] chunks
+  /// of raw PCM audio: 16 kHz, mono, 16-bit little-endian — the same format
+  /// the microphone produces and the WAV header sent to Azure declares.
+  ///
+  /// If [externalAudioStream] is `null`, the microphone is used as normal.
+  Future<void> startListening({Stream<Uint8List>? externalAudioStream}) async {
     _cubit.reset();
     _cubit.setListening(true);
 
@@ -163,9 +171,9 @@ class AzureSttService {
       );
       _channel?.sink.add(serializeBinaryConnectionMessage(wavHeaderMessage));
 
-      final micStream = await _micService.start();
+      final audioStream = externalAudioStream ?? await _micService.start();
 
-      _micSubscription = micStream.listen(
+      _micSubscription = audioStream.listen(
         (Uint8List audioChunk) {
           if (audioChunk.isEmpty) return;
 
