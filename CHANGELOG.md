@@ -1,3 +1,9 @@
+# 0.0.9
+
+- Added optional `externalAudioStream` parameter to `startListening()`, allowing callers to supply their own audio source (e.g. a VoIP call or a file) instead of the device microphone
+- The stream must provide raw PCM audio: 16 kHz sample rate, mono channel, 16-bit little-endian — the same format the microphone produces
+- When `externalAudioStream` is `null`, behaviour is identical to previous versions
+
 # 0.0.8
 
 - Added `LanguageUtils` class with `getSupportedLanguages()` and `maximizeLocale()` methods
