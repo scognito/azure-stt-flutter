@@ -1,14 +1,14 @@
 import 'package:flutter/cupertino.dart';
 
-abstract class AzureResponse {
+abstract class STTResponse {
   final String path;
   final String text;
   final String? language;
 
-  const AzureResponse({required this.path, required this.text, this.language});
+  const STTResponse({required this.path, required this.text, this.language});
 }
 
-class SpeechHypothesis extends AzureResponse {
+class SpeechHypothesis extends STTResponse {
   SpeechHypothesis({required super.text, super.language}) : super(path: 'speech.hypothesis');
 
   factory SpeechHypothesis.fromJson(Map<String, dynamic> json) {
@@ -19,7 +19,7 @@ class SpeechHypothesis extends AzureResponse {
   }
 }
 
-class SpeechPhrase extends AzureResponse {
+class SpeechPhrase extends STTResponse {
   final String recognitionStatus;
 
   SpeechPhrase({required super.text, required this.recognitionStatus, super.language})
@@ -34,7 +34,7 @@ class SpeechPhrase extends AzureResponse {
   }
 }
 
-AzureResponse? parseAzureResponse(String path, Map<String, dynamic> json) {
+STTResponse? parseAzureResponse(String path, Map<String, dynamic> json) {
   try {
     if (path == 'speech.hypothesis') {
       return SpeechHypothesis.fromJson(json);

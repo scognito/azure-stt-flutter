@@ -4,13 +4,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:azure_stt_flutter/azure_stt_flutter.dart';
+import 'package:azure_stt_flutter/src/common/exceptions.dart';
+import 'package:azure_stt_flutter/src/config/azure_speech_config.dart';
+import 'package:azure_stt_flutter/src/config/speech_to_text_config.dart';
 import 'package:azure_stt_flutter/src/constants.dart';
 import 'package:azure_stt_flutter/src/cubit/transcription_cubit.dart';
-import 'package:azure_stt_flutter/src/models/azure_response.dart';
-import 'package:azure_stt_flutter/src/models/connection_message.dart';
-import 'package:azure_stt_flutter/src/models/speech_connection_message.dart';
 import 'package:azure_stt_flutter/src/services/microphone_service.dart';
+import 'package:azure_stt_flutter/src/stt/models/connection_message.dart';
+import 'package:azure_stt_flutter/src/stt/models/speech_connection_message.dart';
+import 'package:azure_stt_flutter/src/stt/models/stt_response.dart';
 import 'package:azure_stt_flutter/src/web_socket/web_socket_service_stub.dart'
     if (dart.library.io) 'package:azure_stt_flutter/src/web_socket/web_socket_service_mobile.dart'
     if (dart.library.html) 'package:azure_stt_flutter/src/web_socket/web_socket_service_web.dart';
@@ -20,11 +22,8 @@ import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class AzureSttService {
-  final String? _subscriptionKey;
-  final String? _authorizationToken;
-  final String _region;
-  final List<String> _languages;
-  final LanguageIdMode _languageIdMode;
+  final AzureSpeechConfig _config;
+  final SpeechToTextConfig _sttConfig;
   final bool _debug;
   final TranscriptionCubit _cubit;
   final MicrophoneService _micService;
@@ -35,41 +34,33 @@ class AzureSttService {
   StreamSubscription? _socketSubscription;
   StreamSubscription<Uint8List>? _micSubscription;
   final _uuid = Uuid();
-  final Duration? _textClearTimeout;
   Timer? _textClearTimer;
 
   AzureSttService({
-    String? subscriptionKey,
-    String? authorizationToken,
-    required String region,
-    List<String> languages = const [Constants.defaultLang],
-    LanguageIdMode languageIdMode = .atStart,
+    required AzureSpeechConfig config,
+    SpeechToTextConfig? sttConfig,
     bool debug = false,
     required TranscriptionCubit cubit,
     required MicrophoneService micService,
-    Duration? textClearTimeout,
-  }) : _subscriptionKey = subscriptionKey,
-       _authorizationToken = authorizationToken,
-       _region = region,
-       _languages = languages,
-       _languageIdMode = languageIdMode,
+  }) : _config = config,
+       _sttConfig = sttConfig ?? SpeechToTextConfig(),
        _cubit = cubit,
        _debug = debug,
-       _micService = micService,
-       _textClearTimeout = textClearTimeout;
+       _micService = micService;
 
-  Future<String?> _getAuthToken() async {
-    if (_subscriptionKey == null) return null;
+  Future<String> _getAuthToken() async {
+    final String subscriptionKey = _config.subscriptionKey!; // Force non-nullable type here
 
-    final uri = Uri.parse('https://$_region.api.cognitive.microsoft.com/sts/v1.0/issueToken');
+    final uri = Uri.parse(
+      'https://${_config.region}.api.cognitive.microsoft.com/sts/v1.0/issueToken',
+    );
     try {
-      final response = await http.post(uri, headers: {Constants.authKey: _subscriptionKey});
+      final response = await http.post(uri, headers: {Constants.authKey: subscriptionKey});
       if (response.statusCode == 200) return response.body;
-      debugPrint('Auth token failed: ${response.statusCode} ${response.body}');
-      return null;
+      throw AzureSpeechException(response.statusCode, response.body);
     } catch (e) {
-      debugPrint('Auth token exception: $e');
-      return null;
+      if (e is AzureSpeechException) rethrow;
+      throw AzureSpeechException(0, e.toString());
     }
   }
 
@@ -81,54 +72,52 @@ class AzureSttService {
   /// the microphone produces and the WAV header sent to Azure declares.
   ///
   /// If [externalAudioStream] is `null`, the microphone is used as normal.
-  Future<void> startListening({Stream<Uint8List>? externalAudioStream}) async {
+  Future<void> startListening({
+    Stream<Uint8List>? externalAudioStream,
+    SpeechToTextConfig? sttConfig,
+  }) async {
+    if (_cubit.isListening) return;
+
     _cubit.reset();
     _cubit.setListening(true);
 
+    final currentSttConfig = sttConfig ?? _sttConfig;
     final requestId = _uuid.v4().replaceAll('-', '').toUpperCase();
 
     try {
-      final isLidEnabled = _languages.length > 1;
+      final isLidEnabled = currentSttConfig.languages.length > 1;
       final queryParams = {Constants.format: 'simple', Constants.connectionId: requestId};
 
       if (isLidEnabled) {
         queryParams[Constants.lidEnabled] = 'true';
       } else {
-        queryParams[Constants.language] = _languages.isNotEmpty
-            ? _languages.first
+        queryParams[Constants.language] = currentSttConfig.sanitizedLanguages.isNotEmpty
+            ? currentSttConfig.sanitizedLanguages.first
             : Constants.defaultLang;
       }
 
       if (kIsWeb) {
-        if (_subscriptionKey != null) {
+        if (_config.subscriptionKey != null) {
           // For web, we pass the subscription key as a query parameter
           // as browsers don't allow setting the Ocp-Apim-Subscription-Key header
-          queryParams[Constants.authKey] = _subscriptionKey;
-        } else if (_authorizationToken != null) {
+          queryParams[Constants.authKey] = _config.subscriptionKey!;
+        } else if (_config.authorizationToken != null) {
           // If it's a token, use the 'Authorization' query parameter with 'Bearer ' prefix
           // This matches how the official JS SDK handles browser WebSocket connections
-          queryParams[Constants.authorization] = 'Bearer $_authorizationToken';
+          queryParams[Constants.authorization] = 'Bearer ${_config.authorizationToken}';
         }
 
         final uri = Uri.parse(
-          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2',
+          'wss://${_config.region}.stt.speech.microsoft.com/stt/speech/universal/v2',
         ).replace(queryParameters: queryParams);
         _channel = getWebSocketService().connect(uri);
       } else {
-        String? token;
-        if (_subscriptionKey != null) {
-          token = await _getAuthToken();
-        } else {
-          token = _authorizationToken;
-        }
-
-        if (token == null) {
-          _cubit.setListening(false);
-          return;
-        }
+        final token = _config.subscriptionKey != null
+            ? await _getAuthToken()
+            : _config.authorizationToken!;
 
         final uri = Uri.parse(
-          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2',
+          'wss://${_config.region}.stt.speech.microsoft.com/stt/speech/universal/v2',
         ).replace(queryParameters: queryParams);
 
         _channel = getWebSocketService().connect(
@@ -140,11 +129,11 @@ class AzureSttService {
       _socketSubscription = _channel!.stream.listen(
         _handleIncoming,
         onError: (err) {
-          if (err is WebSocketChannelException) {
-            debugPrint('WebSocket error: ${err.message}');
-          } else {
-            debugPrint('WebSocket error: $err');
-          }
+          final message = err is WebSocketChannelException
+              ? 'WebSocket error: ${err.message}'
+              : 'WebSocket error: $err';
+          debugPrint(message);
+          _cubit.emitError(message);
           stopListening();
         },
         onDone: () {
@@ -159,17 +148,18 @@ class AzureSttService {
       );
 
       _sendSpeechConfig(requestId);
-      _sendSpeechContext(requestId);
+      _sendSpeechContext(requestId, currentSttConfig);
+      _resetClearTimer();
 
       final wavHeader = _getWavHeader();
       final wavHeaderMessage = SpeechConnectionMessage(
-        .binary,
+        MessageType.binary,
         'audio',
         requestId,
         'audio/x-wav',
         BinaryMessageBody(wavHeader),
       );
-      _channel?.sink.add(serializeBinaryConnectionMessage(wavHeaderMessage));
+      _channel?.sink.add(_serializeBinaryConnectionMessage(wavHeaderMessage));
 
       final audioStream = externalAudioStream ?? await _micService.start();
 
@@ -178,37 +168,41 @@ class AzureSttService {
           if (audioChunk.isEmpty) return;
 
           final audioChunkMessage = SpeechConnectionMessage(
-            .binary,
+            MessageType.binary,
             'audio',
             requestId,
             'audio/x-wav',
             BinaryMessageBody(audioChunk),
           );
-          _channel?.sink.add(serializeBinaryConnectionMessage(audioChunkMessage));
+          _channel?.sink.add(_serializeBinaryConnectionMessage(audioChunkMessage));
           if (_debug) {
             debugPrint('>>> SENT Audio Chunk (${audioChunk.length} bytes)');
           }
         },
         onError: (e) {
-          debugPrint('Mic error: $e');
+          final message = 'Microphone error: $e';
+          debugPrint(message);
+          _cubit.emitError(message);
           stopListening();
         },
         onDone: () {
           debugPrint('Mic stream done; sending end-of-stream.');
           // Send an empty audio message to signal the end of the stream
           final endStreamMessage = SpeechConnectionMessage(
-            .binary,
+            MessageType.binary,
             'audio',
             requestId,
             'audio/x-wav',
             BinaryMessageBody(Uint8List(0)),
           );
-          _channel?.sink.add(serializeBinaryConnectionMessage(endStreamMessage));
+          _channel?.sink.add(_serializeBinaryConnectionMessage(endStreamMessage));
         },
       );
     } catch (e) {
-      debugPrint('startListening exception: $e');
-      stopListening();
+      final message = e is AzureSpeechException ? e.toString() : 'Failed to start listening: $e';
+      debugPrint(message);
+      _cubit.emitError(message);
+      await stopListening();
     }
   }
 
@@ -232,9 +226,9 @@ class AzureSttService {
 
   bool isListening() => _cubit.isListening;
 
-  void sendSpeechMessage(SpeechConnectionMessage message, WebSocketChannel channel) {
-    if (message.messageType == .binary) {
-      final payload = serializeBinaryConnectionMessage(message);
+  void _sendSpeechMessage(SpeechConnectionMessage message, WebSocketChannel channel) {
+    if (message.messageType == MessageType.binary) {
+      final payload = _serializeBinaryConnectionMessage(message);
       channel.sink.add(payload);
       if (_debug) {
         debugPrint('>>> SENT SpeechConnectionMessage BINARY (${payload.length} bytes)');
@@ -254,8 +248,8 @@ class AzureSttService {
     }
   }
 
-  Uint8List serializeBinaryConnectionMessage(SpeechConnectionMessage message) {
-    if (message.messageType != .binary) {
+  Uint8List _serializeBinaryConnectionMessage(SpeechConnectionMessage message) {
+    if (message.messageType != MessageType.binary) {
       throw Exception('Binary serialization is only for MessageType.Binary');
     }
 
@@ -279,7 +273,7 @@ class AzureSttService {
 
     // 2. Create the 2-byte header length prefix (Big-Endian)
     final lengthData = ByteData(2);
-    lengthData.setUint16(0, headerLength, .big); // MUST be 2 bytes, Big-Endian
+    lengthData.setUint16(0, headerLength, Endian.big); // MUST be 2 bytes, Big-Endian
 
     // 3. Assemble the full payload: [2-byte length] + [header] + [body]
     final fullPayload = BytesBuilder();
@@ -298,14 +292,14 @@ class AzureSttService {
     final bodyContent = jsonEncode(payload);
 
     final message = SpeechConnectionMessage(
-      .text,
+      MessageType.text,
       path,
       requestId,
       'application/json; charset=utf-8',
       TextMessageBody(bodyContent),
     );
 
-    sendSpeechMessage(message, _channel!);
+    _sendSpeechMessage(message, _channel!);
   }
 
   void _sendSpeechConfig(String requestId) {
@@ -318,9 +312,9 @@ class AzureSttService {
             : {"platform": "Flutter", "name": "Dart/Flutter Client", "version": "1.0"},
         "audio": {
           "source": {
-            "bitspersample": 16,
-            "channelcount": 1,
-            "samplerate": 16000,
+            "bitspersample": Constants.audioBitsPerSample,
+            "channelcount": Constants.audioChannels,
+            "samplerate": Constants.audioSampleRate,
             "type": "Microphones",
             "connectivity": "Unknown",
             "manufacturer": "Flutter",
@@ -332,15 +326,17 @@ class AzureSttService {
     _sendTextFrame('speech.config', requestId, payload);
   }
 
-  void _sendSpeechContext(String requestId) {
+  void _sendSpeechContext(String requestId, SpeechToTextConfig config) {
     final Map<String, dynamic> payload = {
       "phraseDetection": {"mode": "Conversation"},
     };
 
-    if (_languages.length > 1) {
+    if (config.languages.length > 1) {
       payload["languageId"] = {
-        "languages": _languages,
-        "mode": _languageIdMode == .continuous ? 'DetectContinuous' : 'DetectAtAudioStart',
+        "languages": config.sanitizedLanguages, // Use sanitizedLanguages
+        "mode": config.languageIdMode == LanguageIdMode.continuous
+            ? 'DetectContinuous'
+            : 'DetectAtAudioStart',
         "onSuccess": {"action": "Recognize"},
         "onUnknown": {"action": "None"},
         "priority": "PrioritizeLatency",
@@ -431,11 +427,10 @@ class AzureSttService {
   }
 
   Uint8List _getWavHeader() {
-    // Data for 16kHz, 16-bit, mono
-    final sampleRate = 16000;
-    final channels = 1;
-    final bitsPerSample = 16;
-    final byteRate = (sampleRate * channels * bitsPerSample) ~/ 8;
+    const sampleRate = Constants.audioSampleRate;
+    const channels = Constants.audioChannels;
+    const bitsPerSample = Constants.audioBitsPerSample;
+    const byteRate = (sampleRate * channels * bitsPerSample) ~/ 8;
 
     // Using ByteData for managing endianness (little-endian)
     final buffer = Uint8List(44);
@@ -444,38 +439,36 @@ class AzureSttService {
     // "RIFF"
     buffer.setRange(0, 4, [0x52, 0x49, 0x46, 0x46]);
     // File size (set 0 for streaming)
-    view.setUint32(4, 0, .little);
+    view.setUint32(4, 0, Endian.little);
     // "WAVE"
     buffer.setRange(8, 12, [0x57, 0x41, 0x56, 0x45]);
     // "fmt " chunk
     buffer.setRange(12, 16, [0x66, 0x6D, 0x74, 0x20]);
     // fmt chunk size (16 for PCM)
-    view.setUint32(16, 16, .little);
+    view.setUint32(16, 16, Endian.little);
     // Audio format (1 for PCM)
-    view.setUint16(20, 1, .little);
+    view.setUint16(20, 1, Endian.little);
     // Num channels
-    view.setUint16(22, channels, .little);
+    view.setUint16(22, channels, Endian.little);
     // Sample rate
-    view.setUint32(24, sampleRate, .little);
+    view.setUint32(24, sampleRate, Endian.little);
     // Byte rate
-    view.setUint32(28, byteRate, .little);
+    view.setUint32(28, byteRate, Endian.little);
     // Block align
-    view.setUint16(32, (channels * bitsPerSample) ~/ 8, .little);
+    view.setUint16(32, (channels * bitsPerSample) ~/ 8, Endian.little);
     // Bits per sample
-    view.setUint16(34, bitsPerSample, .little);
+    view.setUint16(34, bitsPerSample, Endian.little);
     // "data" chunk
     buffer.setRange(36, 40, [0x64, 0x61, 0x74, 0x61]);
     // Data size (set 0 for streaming)
-    view.setUint32(40, 0, .little);
+    view.setUint32(40, 0, Endian.little);
 
     return buffer;
   }
 
   void _resetClearTimer() {
-    if (_textClearTimeout == null) return;
-
     _textClearTimer?.cancel();
-    _textClearTimer = Timer(_textClearTimeout, () {
+    _textClearTimer = Timer(_sttConfig.textClearTimeout, () {
       _cubit.clearText();
     });
   }

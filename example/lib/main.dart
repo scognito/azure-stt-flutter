@@ -1,41 +1,67 @@
-import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:azure_stt_flutter/azure_stt_flutter.dart';
+import 'package:azure_stt_flutter/azure_speech_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:provider/provider.dart';
+import 'package:just_audio/just_audio.dart';
+
+import 'stt_screen.dart';
+import 'tts_screen.dart';
 
 Future<void> main() async {
   await dotenv.load(fileName: '.env');
   runApp(const MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp();
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Azure Demo',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: const AzureSpeechToTextExample(),
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> {
-  AzureSpeechToText? _azureSpeechToText;
+class AzureSpeechToTextExample extends StatefulWidget {
+  const AzureSpeechToTextExample({super.key});
+
+  @override
+  State<AzureSpeechToTextExample> createState() =>
+      _AzureSpeechToTextExampleState();
+}
+
+class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
+  late AzureSpeechToText _sttService;
+  late AzureTextToSpeech _ttsService;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   String _currentLanguage = 'en-US';
+  int _selectedIndex = 0;
+
+  String get _region => dotenv.env['AZURE_REGION']!;
+
+  String get _subscriptionKey => dotenv.env['AZURE_SUBSCRIPTION_KEY']!;
 
   @override
   void initState() {
     super.initState();
-    _initAzureStt();
+    _initAzureServices();
   }
 
-  void _initAzureStt() {
-    _azureSpeechToText?.dispose();
-
+  void _initAzureServices() {
     List<String> languages = [_currentLanguage];
-    LanguageIdMode languageIdMode = .atStart;
+    LanguageIdMode languageIdMode = LanguageIdMode.atStart;
 
     if (_currentLanguage == 'autodetect') {
-      // The SDK accepts only languages in the format languageCode-countryCode
-      // If the user uses only the language code, this package try to guess the country (fallback is 'en-US)
       languages = ['it', 'es-ES', 'nl-NL', 'en-US'];
     } else if (_currentLanguage == 'continuous') {
       languages = [
@@ -50,203 +76,92 @@ class _MyAppState extends State<MyApp> {
         'sv-SE',
         'uk-UA',
       ];
-      languageIdMode = .continuous;
+      languageIdMode = LanguageIdMode.continuous;
     }
 
-    _azureSpeechToText = AzureSpeechToText(
-      subscriptionKey: dotenv.env['AZURE_SUBSCRIPTION_KEY']!,
-      //authorizationToken: dotenv.env['AZURE_ACCESS_TOKEN'],
-      region: dotenv.env['AZURE_REGION']!,
-      languages: languages,
-      languageIdMode: languageIdMode,
-      debug: false,
+    final config = AzureSpeechConfig.subscriptionKey(
+      region: _region,
+      key: _subscriptionKey,
     );
+
+    _sttService = AzureSpeechToText(
+      config: config,
+      sttConfig: SpeechToTextConfig(
+        languages: languages,
+        languageIdMode: languageIdMode,
+      ),
+    );
+    _ttsService = AzureTextToSpeech(config: config);
   }
 
   void _onLanguageChanged(String? newLanguage) {
-    if (newLanguage != null && newLanguage != _currentLanguage) {
-      setState(() {
-        _currentLanguage = newLanguage;
-        _initAzureStt();
-      });
-    }
+    if (newLanguage == null || newLanguage == _currentLanguage) return;
+    _sttService.dispose();
+    setState(() {
+      _currentLanguage = newLanguage;
+      _initAzureServices();
+    });
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   @override
   void dispose() {
-    _azureSpeechToText?.dispose();
+    _sttService.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_azureSpeechToText == null) return const SizedBox.shrink();
-
-    return Provider<AzureSpeechToText>.value(
-      value: _azureSpeechToText!,
-      child: MaterialApp(
-        title: 'Azure STT Demo',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        home: TranscriptionPage(
+    final screens = [
+      BlocProvider.value(
+        value: _sttService.cubit,
+        child: SttScreen(
+          sttService: _sttService,
           selectedLanguage: _currentLanguage,
           onLanguageChanged: _onLanguageChanged,
         ),
+      ),
+      TtsScreen(ttsService: _ttsService, audioPlayer: _audioPlayer),
+    ];
+
+    return Scaffold(
+      body: screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.mic), label: 'STT'),
+          BottomNavigationBarItem(icon: Icon(Icons.volume_up), label: 'TTS'),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.white,
+        unselectedItemColor: Colors.blueAccent,
+        onTap: _onItemTapped,
+        backgroundColor: const Color(0xFF2E3192),
       ),
     );
   }
 }
 
-class TranscriptionPage extends StatelessWidget {
-  final String selectedLanguage;
-  final ValueChanged<String?> onLanguageChanged;
+class MyCustomSource extends StreamAudioSource {
+  final List<int> _audioBytes;
 
-  const TranscriptionPage({required this.selectedLanguage, required this.onLanguageChanged});
-
-  static const _languages = {
-    'en-US': 'English', // The SDK accepts only languages in the format languageCode-countryCode
-    'it': 'Italian', // If the user uses only the language code, this package try to guess the country (fallback is 'en-US)
-    'nl-NL': 'Dutch',
-    'es-ES': 'Spanish',
-    'autodetect': 'At Start (IT, ES, NL, EN)',
-    'continuous': 'Continuous (10 Languages)',
-  };
+  MyCustomSource(this._audioBytes) : super(tag: 'MyCustomSource');
 
   @override
-  Widget build(BuildContext context) {
-    final azureStt = Provider.of<AzureSpeechToText>(context);
-
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF2E3192), Color(0xFF1BFFFF)],
-          ),
-        ),
-        child: StreamBuilder<TranscriptionState>(
-          stream: azureStt.transcriptionStateStream,
-          initialData: const TranscriptionState(),
-          builder: (context, snapshot) {
-            final state = snapshot.data!;
-            return SafeArea(
-              child: Column(
-                children: [
-                  _buildAppBar(state.isListening),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        if (state.text.isEmpty && !state.isListening)
-                          Center(
-                            child: Text(
-                              'Press the mic button to start\nreal-time transcription.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.white.withAlpha(204),
-                                fontWeight: FontWeight.w300,
-                              ),
-                            ),
-                          ),
-                        if (state.text.isNotEmpty)
-                          Align(
-                            alignment: Alignment.center,
-                            child: Padding(
-                              padding: const EdgeInsets.all(24.0),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withAlpha(153),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white.withAlpha(51)),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withAlpha(51),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 10),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      state.text,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
-                                        height: 1.3,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 40),
-                    child: FloatingActionButton.large(
-                      onPressed: () {
-                        if (state.isListening) {
-                          azureStt.stopListening();
-                        } else {
-                          azureStt.startListening();
-                        }
-                      },
-                      backgroundColor: state.isListening ? Colors.redAccent : Colors.white,
-                      foregroundColor: state.isListening ? Colors.white : Colors.blueAccent,
-                      child: Icon(state.isListening ? Icons.stop : Icons.mic),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAppBar(bool isListening) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            'Azure STT',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(51),
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selectedLanguage,
-                dropdownColor: const Color(0xFF2E3192),
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-                onChanged: isListening ? null : onLanguageChanged,
-                items: _languages.entries.map((entry) {
-                  return DropdownMenuItem<String>(value: entry.key, child: Text(entry.value));
-                }).toList(),
-              ),
-            ),
-          ),
-        ],
-      ),
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    end ??= _audioBytes.length;
+    return StreamAudioResponse(
+      sourceLength: _audioBytes.length,
+      contentLength: end - start,
+      offset: start,
+      contentType: 'audio/mpeg',
+      stream: Stream.value(Uint8List.fromList(_audioBytes.sublist(start, end))),
     );
   }
 }

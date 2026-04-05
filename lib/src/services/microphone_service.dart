@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:azure_stt_flutter/src/constants.dart';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 
@@ -12,7 +13,11 @@ class MicrophoneService {
       throw Exception('Microphone permission not granted');
     }
 
-    const config = RecordConfig(encoder: .pcm16bits, sampleRate: 16000, numChannels: 1);
+    const config = RecordConfig(
+      encoder: .pcm16bits,
+      sampleRate: Constants.audioSampleRate,
+      numChannels: Constants.audioChannels,
+    );
 
     debugPrint('Starting microphone stream (16kHz, mono, PCM16)...');
 

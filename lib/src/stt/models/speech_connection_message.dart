@@ -1,6 +1,6 @@
+import 'package:azure_stt_flutter/src/common/exceptions.dart';
 import 'package:azure_stt_flutter/src/constants.dart';
-import 'package:azure_stt_flutter/src/models/connection_message.dart';
-import 'package:azure_stt_flutter/src/utils.dart';
+import 'package:azure_stt_flutter/src/stt/models/connection_message.dart';
 
 class SpeechConnectionMessage extends ConnectionMessage {
   final String _path;

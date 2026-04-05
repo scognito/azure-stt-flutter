@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:azure_stt_flutter/src/utils.dart';
+import 'package:azure_stt_flutter/src/common/exceptions.dart';
 import 'package:uuid/uuid.dart';
 
+enum MessageType { text, binary }
+
 class ConnectionMessage {
+  static final _uuid = Uuid();
+
   final MessageType _messageType;
   final Map<String, dynamic> _headers;
   final MessageBody? _body;
@@ -18,13 +22,13 @@ class ConnectionMessage {
     String? id,
   }) : _body = body,
        _headers = headers ?? {},
-       _id = id ?? Uuid().v4().replaceAll('-', ''),
+       _id = id ?? _uuid.v4().replaceAll('-', ''),
        _size = _calculateSize(body) {
-    if (_messageType == .text && body != null && body is! TextMessageBody) {
+    if (_messageType == MessageType.text && body != null && body is! TextMessageBody) {
       throw InvalidOperationError('Payload must be String (MessageType.text)');
     }
 
-    if (_messageType == .binary && body != null && body is! BinaryMessageBody) {
+    if (_messageType == MessageType.binary && body != null && body is! BinaryMessageBody) {
       throw InvalidOperationError('Payload must be Uint8List (MessageType.binary)');
     }
   }
@@ -40,7 +44,7 @@ class ConnectionMessage {
 
   MessageType get messageType => _messageType;
 
-  Map<String, dynamic> get headers => _headers;
+  Map<String, dynamic> get headers => Map.unmodifiable(_headers);
 
   MessageBody? get body => _body;
 

@@ -12,12 +12,15 @@ class TranscriptionCubit extends Cubit<TranscriptionState> {
   }
 
   void updateIntermediateText(String text, {String? language}) {
-    emit(state.copyWith(
-      intermediateText: text,
-      finalizedText: [],
-      text: text,
-      detectedLanguage: language,
-    ));
+    emit(
+      state.copyWith(
+        intermediateText: text,
+        finalizedText: [],
+        text: text,
+        detectedLanguage: _Value(language),
+        error: const _Clear(),
+      ),
+    );
   }
 
   void addFinalizedText(String text, {String? language}) {
@@ -28,7 +31,8 @@ class TranscriptionCubit extends Cubit<TranscriptionState> {
           finalizedText: updatedList,
           intermediateText: '',
           text: updatedList.join(),
-          detectedLanguage: language,
+          detectedLanguage: _Value(language),
+          error: const _Clear(),
         ),
       );
     } else {
@@ -36,13 +40,26 @@ class TranscriptionCubit extends Cubit<TranscriptionState> {
     }
   }
 
+  void emitError(String message) {
+    emit(state.copyWith(isListening: false, error: _Value(message)));
+  }
+
   bool get isListening => state.isListening;
 
   void reset() {
-    emit(const TranscriptionState(intermediateText: '', finalizedText: [], isListening: false));
+    clearText();
+    emit(state.copyWith(isListening: false));
   }
 
   void clearText() {
-    emit(state.copyWith(intermediateText: '', finalizedText: [], text: '', detectedLanguage: null));
+    emit(
+      state.copyWith(
+        intermediateText: '',
+        finalizedText: [],
+        text: '',
+        detectedLanguage: const _Clear(),
+        error: const _Clear(),
+      ),
+    );
   }
 }

@@ -1,203 +1,269 @@
-# Azure STT Flutter
+# Azure Speech Flutter
 
-A Flutter package for real-time Speech-to-Text (transcription) using Microsoft Azure Cognitive Services. This library provides a reactive, stream-based API built to easily integrate speech recognition into your Flutter applications.
+A Flutter package for real-time **Speech-to-Text** (STT) and **Text-to-Speech** (TTS) using Microsoft Azure Cognitive Services. No Azure SDK binary dependency: it communicates directly with the Azure WebSocket/REST APIs.
 
-## Features
-
-*   **Real-time Transcription**: Receive intermediate results (hypothesis) and finalized text as the user speaks.
-*   **Cross-Platform**: Supports Mobile (iOS, Android), Desktop (macOS, Windows, Linux), and Web.
-*   **Auto-Silence Timeout**: Automatically clears the text after a configurable period of silence.
-*   **Multi-Language & LID**: Supports single-language recognition and multi-language identification (LID).
-
-## Language Identification (LID) Modes
-
-The library supports three main ways to handle spoken languages. Choosing the right mode is critical for performance and accuracy.
-
-### 1. Single Language (Fastest)
-This is the **recommended mode for fastest subtitles and real-time feedback**. The engine doesn't spend time identifying the language; it starts transcribing immediately using the provided locale.
-
-**How to use:** Provide only one language in the list.
-```dart
-// Using Subscription Key (Long-lived)
-final azureStt = AzureSpeechToText(
-  subscriptionKey: 'YOUR_AZURE_KEY',
-  region: 'westeurope',
-  languages: ['en-US'],
-);
-
-// OR Using Authorization Token (Short-lived)
-final azureStt = AzureSpeechToText(
-  authorizationToken: 'YOUR_BACKEND_GENERATED_TOKEN',
-  region: 'westeurope',
-  languages: ['en-US'],
-);
-```
-
-### 2. At-Start Detection
-The service identifies the language(s) talked at the beginning of the audio and then transcribes using that language for the rest of the session. It supports up to **4 candidate languages**.
-
-**Note**: The first few seconds of audio are used for identification, which might introduce a slight initial delay in transcription.
-
-**How to use:** Provide up to 4 languages and set `languageIdMode` to 'AtStart' (default).
-```dart
-final azureStt = AzureSpeechToText(
-  subscriptionKey: '...',
-  region: '...',
-  languages: ['en-US', 'it-IT', 'es-ES', 'fr-FR'],
-  languageIdMode: .atStart, // Default
-);
-```
-
-### 3. Continuous Detection
-The service continuously monitors the audio and can switch the transcription language mid-stream if the speaker changes. It supports up to **10 candidate languages**.
-
-**Note**: This mode is the most flexible but requires the service to constantly evaluate the language, which is best for multi-lingual conversations.
-
-**How to use:** Provide up to 10 languages and set `languageIdMode` to 'Continuous'.
-```dart
-final azureStt = AzureSpeechToText(
-  subscriptionKey: '...',
-  region: '...',
-  languages: ['en-US', 'it-IT', 'es-ES', 'de-DE', 'pt-PT', 'nb-NO', 'sv-SE', 'uk-UA'],
-  languageIdMode: .continuous,
-);
-```
+*   **STT**: Stream-based real-time transcription with intermediate (hypothesis) and finalized results, multi-language identification (LID), and auto-silence timeout.
+*   **TTS**: Synthesize text to audio bytes using any Azure Neural voice, with configurable output format.
+*   **Cross-platform**: Mobile (iOS, Android), Desktop (macOS, Windows, Linux), and Web.
 
 ## Example app
-
-An example app is included in the package:
 
 <p>
   <img src="https://raw.githubusercontent.com/scognito/azure-stt-flutter/main/screenshots/image-01.jpg" width="300">
   <img src="https://raw.githubusercontent.com/scognito/azure-stt-flutter/main/screenshots/image-02.jpg" width="300">
 </p>
 
+---
+
 ## Getting Started
 
-### 1. Permissions
+### Installation
 
-**Android**
+```dart
+import 'package:azure_stt_flutter/azure_speech_flutter.dart';
+```
 
-Add the microphone permission to `android/app/src/main/AndroidManifest.xml`:
+### Authentication
 
+Both STT and TTS use the same `AzureSpeechConfig`. You must provide exactly one credential:
+
+```dart
+// Option A: Subscription Key
+final config = AzureSpeechConfig.subscriptionKey(
+  region: 'westeurope', // or other supported region
+  key: 'YOUR_AZURE_KEY',
+);
+
+// Option B: Short-lived Authorization Token (recommended for Web)
+final config = AzureSpeechConfig.authorizationToken(
+  region: 'westeurope', // or other supported region
+  token: 'YOUR_BACKEND_GENERATED_TOKEN',
+);
+```
+
+**Web security note**: Browser WebSocket APIs cannot set custom HTTP headers. On Web, auth is passed as a URL query parameter. Always use `authorizationToken` (generated server-side) on Web: never expose `subscriptionKey` in the browser URL.
+
+To generate a short-lived token:
+```sh
+curl -X POST \
+  "https://westeurope.api.cognitive.microsoft.com/sts/v1.0/issueToken" \
+  -H "Content-Length: 0" \
+  -H "Ocp-Apim-Subscription-Key: YOUR_KEY"
+```
+
+---
+
+## Speech-to-Text (STT)
+
+### Permissions
+
+STT requires microphone access. TTS does not.
+
+**Android** — `android/app/src/main/AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 <uses-permission android:name="android.permission.INTERNET" />
 ```
 
-**iOS**
-
-Add the microphone usage description to `ios/Runner/Info.plist`:
-
+**iOS** — `ios/Runner/Info.plist`:
 ```xml
 <key>NSMicrophoneUsageDescription</key>
-<string>This app needs access to the microphone for speech recognition.</string>
+<string>This app needs microphone access for speech recognition.</string>
 ```
 
-**macOS**
-
-Add the microphone entitlement to `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
-
+**macOS** — `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
 ```xml
 <key>com.apple.security.device.audio-input</key>
 <true/>
 ```
 
-## Usage
-
-### Initialization
-
-Initialize the `AzureSpeechToText` instance. 
+### Basic usage
 
 ```dart
 final azureStt = AzureSpeechToText(
-  subscriptionKey: 'YOUR_AZURE_KEY', // Or authorizationToken: '...'
-  region: 'westeurope',
-  languages: ['en-US'],
-  textClearTimeout: const Duration(seconds: 2),
+  config: AzureSpeechConfig.subscriptionKey(
+    region: 'westeurope', // or other supported region
+    key: 'YOUR_AZURE_KEY',
+  ),
+  sttConfig: SpeechToTextConfig(
+    languages: ['en-US'],
+    textClearTimeout: const Duration(seconds: 2),
+  ),
 );
+
+// Start / stop
+await azureStt.start();
+await azureStt.stop();
+
+// Check state
+azureStt.isListening;
+
+// Dispose when done
+await azureStt.dispose();
 ```
 
-### Listening to Updates
+### Listening to transcription updates
 
-The library exposes a `transcriptionStateStream` which emits `TranscriptionState` updates. When using LID, the `detectedLanguage` field will contain the identified locale.
+`azureStt.stream` emits `TranscriptionState` on every change:
 
 ```dart
 StreamBuilder<TranscriptionState>(
-  stream: azureStt.transcriptionStateStream,
+  stream: azureStt.stream,
   builder: (context, snapshot) {
-    final state = snapshot.data;
-    if (state == null) return SizedBox();
+    final state = snapshot.data ?? const TranscriptionState();
+
+    if (state.error != null) return Text('Error: ${state.error}');
 
     return Column(
       children: [
         if (state.detectedLanguage != null)
-          Text('Language: ${state.detectedLanguage}'),
+          Text('Detected: ${state.detectedLanguage}'),
         // Combined text (finalized + intermediate)
         Text(state.text),
-
-        // Or access them separately
-        // Text(state.intermediateText), // Changing hypothesis
-        // Text(state.finalizedText.join(' ')), // Confirmed sentences
+        // state.intermediateText // live hypothesis (no punctuation)
+        // state.finalizedText   // list of confirmed sentences
+        // state.isListening     // mic active
       ],
     );
   },
 )
 ```
 
-### Controls
+### Using the BLoC cubit
+
+`AzureSpeechToText` owns a `TranscriptionCubit`. Provide it higher in the widget tree to avoid rebuilding the whole subtree:
 
 ```dart
-// Start listening
-await azureStt.startListening()
+BlocProvider.value(
+  value: azureStt.cubit,
+  child: MyWidget(),
+)
 
-// Stop listening
-azureStt.stopListening()
-
-// Check if listening
-azureStt.isListening()
-
-// Dispose when done
-azureStt.dispose()
+// Then in a descendant:
+BlocBuilder<TranscriptionCubit, TranscriptionState>(
+  builder: (context, state) => Text(state.text),
+)
 ```
 
-## Architecture
+### Language Identification (LID)
 
-The library is built using the **BLoC/Cubit** pattern to manage the state of the transcription.
+The number of languages you provide determines the mode automatically:
 
-### TranscriptionCubit
-The central state manager. It processes events from the Azure Service and emits `TranscriptionState`.
+|  Mode | Languages count |
+|---|-----------------|
+|Single language (fastest) | 1               |
+| At-Start LID | 1 - 4           |
+| Continuous LID | 1 - 10          |
 
-### TranscriptionState
-An immutable object containing:
-*   **`intermediateText`**: The real-time, changing text (hypothesis) that Azure sends while you are speaking.
-*   **`finalizedText`**: A list of completed sentences (phrases) that Azure has confirmed.
-*   **`text`**: A helper field that combines finalized and intermediate text for easier display.
-*   **`detectedLanguage`**: The BCP-47 locale detected by the service (when using LID).
-*   **`isListening`**: A boolean indicating if the microphone is active.
+Bare language codes are expanded automatically (`"it"` → `"it-IT"`).
 
-## Authentication
+```dart
+// Single language: fastest, no identification overhead
+SpeechToTextConfig(languages: ['en-US'])
 
-The library handles authentication differently depending on the platform due to browser limitations.
+// At-Start: identifies once at the beginning of the session
+SpeechToTextConfig(
+  languages: ['en-US', 'it', 'es-ES', 'fr-FR'],
+  languageIdMode: .atStart, // default
+)
 
-### Mobile & Desktop
-*   **Mechanism**: The library uses the Subscription Key to get a short-lived **Access Token** from Azure.
-*   **Connection**: It connects to the Azure WebSocket URL, passing this token in the **HTTP Authorization Header** (`Authorization: Bearer <token>`). This is the standard, secure way.
-
-### Web
-*   **Limitation**: Standard browser WebSocket APIs do not allow setting custom HTTP headers during the handshake.
-*   **Solution**: The library passes authentication via URL Query Parameters.
-*   **Security**: For Web, it is **strongly recommended** to use `authorizationToken` instead of `subscriptionKey`. You should generate these short-lived tokens on your backend to avoid exposing your permanent key in the browser URL.
-
-### Short lived token creation example
+// Continuous: re-identifies throughout the session, up to 10 languages
+SpeechToTextConfig(
+  languages: ['en-US', 'it-IT', 'es-ES', 'de-DE', 'pt-PT', 'nb-NO', 'sv-SE', 'uk-UA'],
+  languageIdMode: .continuous,
+)
 ```
-curl -v -X POST \
-"https://eastus.api.cognitive.microsoft.com/sts/v1.0/issueToken" \
--H "Content-type: application/x-www-form-urlencoded" \
--H "Content-Length: 0" \
--H "Ocp-Apim-Subscription-Key: YourSpeechResourceKey"
+
+### External audio stream
+
+To bypass the microphone (e.g. VoIP or file audio), inject your own stream. It must emit raw PCM: 16 kHz, mono, 16-bit little-endian.
+
+```dart
+await azureStt.start(); // uses mic by default
+// or pass an external stream via the service layer (see AzureSttService.startListening)
 ```
+
+---
+
+## Text-to-Speech (TTS)
+
+No microphone permissions required.
+
+### Basic usage
+
+```dart
+final azureTts = AzureTextToSpeech(
+  config: AzureSpeechConfig.subscriptionKey(
+    region: 'westeurope', // or other supported region
+    key: 'YOUR_AZURE_KEY',
+  ),
+);
+
+// 1. Fetch available voices
+final voices = await azureTts.listVoices();
+
+// 2. Pick a voice
+final voice = voices.firstWhere(
+  (v) => v.locale == 'en-US' && v.gender == 'Female',
+  orElse: () => voices.first,
+);
+
+// 3. Synthesize: returns raw audio bytes
+final audioBytes = await azureTts.synthesize(
+  TtsRequest(
+    text: 'Hello from Azure Speech Flutter!',
+    voice: voice,
+    outputFormat: .audio16khz128kbitrateMonoMp3, // default
+  ),
+);
+```
+
+### Output formats
+
+`AudioOutputFormat` covers MP3, PCM, mulaw, Opus, and WebM at various sample rates and bitrates. The default is `audio16khz128kbitrateMonoMp3`.
+
+### Playing the audio
+
+The package returns raw bytes. Plug them into any audio player. Example with [`just_audio`](https://pub.dev/packages/just_audio):
+
+```dart
+class _BytesAudioSource extends StreamAudioSource {
+  final List<int> bytes;
+  _BytesAudioSource(this.bytes) : super(tag: 'tts');
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    end ??= bytes.length;
+    return StreamAudioResponse(
+      sourceLength: bytes.length,
+      contentLength: end - start,
+      offset: start,
+      contentType: 'audio/mpeg',
+      stream: Stream.value(Uint8List.fromList(bytes.sublist(start, end))),
+    );
+  }
+}
+
+final player = AudioPlayer();
+await player.setAudioSource(_BytesAudioSource(audioBytes));
+await player.play();
+```
+
+### Voice metadata
+
+Each `TtsVoice` exposes:
+
+| Field | Description |
+|---|---|
+| `name` | Azure short name (e.g. `en-US-JennyNeural`) |
+| `locale` | BCP-47 locale (e.g. `en-US`) |
+| `localeName` | Locale display name (e.g. `English (United States)`) |
+| `localName` | Voice display name in its own language |
+| `gender` | `"Male"` or `"Female"` |
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).
