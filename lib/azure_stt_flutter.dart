@@ -40,10 +40,13 @@ class AzureSpeechToText {
   /// - [languageIdMode]: Language detection mode (atStart or continuous). Defaults to atStart
   /// - [debug]: Enable debug logging. Defaults to false
   /// - [textClearTimeout]: Duration before clearing intermediate text. Defaults to 1 second
+  /// - [customEndpoint]: Optional full Azure Speech endpoint URL. When provided, it
+  ///   overrides the default region-based websocket endpoint.
   AzureSpeechToText({
     String? subscriptionKey,
     String? authorizationToken,
     required String region,
+    String? customEndpoint,
     List<String> languages = const [Constants.defaultLang],
     LanguageIdMode languageIdMode = .atStart,
     bool debug = false,
@@ -65,6 +68,7 @@ class AzureSpeechToText {
       subscriptionKey: subscriptionKey,
       authorizationToken: authorizationToken,
       region: region,
+      customEndpoint: customEndpoint,
       languages: sanitizedLanguages,
       languageIdMode: languageIdMode,
       debug: debug,
