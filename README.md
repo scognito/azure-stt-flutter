@@ -25,6 +25,14 @@ final azureStt = AzureSpeechToText(
   languages: ['en-US'],
 );
 
+// Optional custom endpoint
+final azureSttCustom = AzureSpeechToText(
+  subscriptionKey: 'YOUR_AZURE_KEY',
+  region: 'westeurope',
+  customEndpoint: 'https://stt.your-domain.com',
+  languages: ['en-US'],
+);
+
 // OR Using Authorization Token (Short-lived)
 final azureStt = AzureSpeechToText(
   authorizationToken: 'YOUR_BACKEND_GENERATED_TOKEN',

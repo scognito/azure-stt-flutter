@@ -1,3 +1,9 @@
+# 0.0.10
+
+- Added optional `customEndpoint` parameter to `AzureSpeechToText`, allowing callers to override the
+  default Azure Speech websocket endpoint while keeping the region-based endpoint as the default
+  behavior.
+
 # 0.0.9
 
 - Added optional `externalAudioStream` parameter to `startListening()`, allowing callers to supply

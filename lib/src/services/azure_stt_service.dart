@@ -23,6 +23,7 @@ class AzureSttService {
   final String? _subscriptionKey;
   final String? _authorizationToken;
   final String _region;
+  final String? _customEndpoint;
   final List<String> _languages;
   final LanguageIdMode _languageIdMode;
   final bool _debug;
@@ -42,6 +43,7 @@ class AzureSttService {
     String? subscriptionKey,
     String? authorizationToken,
     required String region,
+    String? customEndpoint,
     List<String> languages = const [Constants.defaultLang],
     LanguageIdMode languageIdMode = .atStart,
     bool debug = false,
@@ -51,6 +53,7 @@ class AzureSttService {
   }) : _subscriptionKey = subscriptionKey,
        _authorizationToken = authorizationToken,
        _region = region,
+       _customEndpoint = _normalizeEndpoint(customEndpoint),
        _languages = languages,
        _languageIdMode = languageIdMode,
        _cubit = cubit,
@@ -71,6 +74,27 @@ class AzureSttService {
       debugPrint('Auth token exception: $e');
       return null;
     }
+  }
+
+  static String? _normalizeEndpoint(String? endpoint) {
+    if (endpoint == null || endpoint.trim().isEmpty) return null;
+
+    final parsed = Uri.tryParse(endpoint.trim());
+    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
+      throw ArgumentError.value(
+        endpoint,
+        'customEndpoint',
+        'Must be an absolute URL such as https://example.com',
+      );
+    }
+
+    return parsed.replace(path: parsed.path.replaceFirst(RegExp(r'/$'), '')).toString();
+  }
+
+  Uri _buildSpeechUri(Map<String, String> queryParams) {
+    final baseUri = Uri.parse(_customEndpoint ?? 'wss://$_region.stt.speech.microsoft.com');
+
+    return baseUri.replace(path: '/stt/speech/universal/v2', queryParameters: queryParams);
   }
 
   /// Starts the speech recognition session.
@@ -110,9 +134,7 @@ class AzureSttService {
           queryParams[Constants.authorization] = 'Bearer $_authorizationToken';
         }
 
-        final uri = Uri.parse(
-          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2',
-        ).replace(queryParameters: queryParams);
+        final uri = _buildSpeechUri(queryParams);
         _channel = getWebSocketService().connect(uri);
       } else {
         String? token;
@@ -127,9 +149,7 @@ class AzureSttService {
           return;
         }
 
-        final uri = Uri.parse(
-          'wss://$_region.stt.speech.microsoft.com/stt/speech/universal/v2',
-        ).replace(queryParameters: queryParams);
+        final uri = _buildSpeechUri(queryParams);
 
         _channel = getWebSocketService().connect(
           uri,
