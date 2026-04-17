@@ -9,10 +9,12 @@ export 'package:azure_stt_flutter/src/common/exceptions.dart'
 export 'package:azure_stt_flutter/src/config/azure_speech_config.dart';
 export 'package:azure_stt_flutter/src/config/speech_to_text_config.dart';
 export 'package:azure_stt_flutter/src/config/tts_models.dart';
-
-export 'package:azure_stt_flutter/src/stt/azure_speech_to_text.dart';
-export 'package:azure_stt_flutter/src/tts/azure_text_to_speech.dart';
-
 export 'package:azure_stt_flutter/src/cubit/transcription_cubit.dart'
     show TranscriptionCubit, TranscriptionState;
+export 'package:azure_stt_flutter/src/stt/azure_speech_to_text.dart';
+export 'package:azure_stt_flutter/src/translation/azure_speech_translation.dart';
+export 'package:azure_stt_flutter/src/translation/translation_config.dart';
+export 'package:azure_stt_flutter/src/translation/translation_cubit.dart'
+    show TranslationCubit, TranslationState;
+export 'package:azure_stt_flutter/src/tts/azure_text_to_speech.dart';
 export 'package:azure_stt_flutter/src/utils/language_utils.dart' show LanguageUtils;

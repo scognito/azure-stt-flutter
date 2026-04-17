@@ -153,7 +153,7 @@ class LanguageUtils {
   }
 
   static String maximizeLocale(String languageCode) {
-    // The Speech SDK only accepts languages in the format languageCode-regionCode
+    // The Speech to text SDK only accepts languages in the format languageCode-regionCode
     if (languageCode.contains('-')) {
       return languageCode;
     }

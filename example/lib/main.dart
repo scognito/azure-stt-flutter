@@ -7,6 +7,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'stt_screen.dart';
+import 'translation_screen.dart';
 import 'tts_screen.dart';
 
 Future<void> main() async {
@@ -42,13 +43,15 @@ class AzureSpeechToTextExample extends StatefulWidget {
 class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
   late AzureSpeechToText _sttService;
   late AzureTextToSpeech _ttsService;
+  late AzureSpeechTranslation _translationService;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   String _currentLanguage = 'en-US';
+  String _translationFromLanguage = 'en-US';
+  String _translationToLanguage = 'it';
   int _selectedIndex = 0;
 
   String get _region => dotenv.env['AZURE_REGION']!;
-
   String get _subscriptionKey => dotenv.env['AZURE_SUBSCRIPTION_KEY']!;
 
   @override
@@ -92,6 +95,14 @@ class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
       ),
     );
     _ttsService = AzureTextToSpeech(config: config);
+    _translationService = AzureSpeechTranslation(
+      debug: true,
+      config: config,
+      translationConfig: TranslationConfig(
+        fromLanguage: _translationFromLanguage,
+        toLanguages: [_translationToLanguage],
+      ),
+    );
   }
 
   void _onLanguageChanged(String? newLanguage) {
@@ -99,6 +110,24 @@ class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
     _sttService.dispose();
     setState(() {
       _currentLanguage = newLanguage;
+      _initAzureServices();
+    });
+  }
+
+  void _onTranslationFromChanged(String? newLanguage) {
+    if (newLanguage == null || newLanguage == _translationFromLanguage) return;
+    _translationService.dispose();
+    setState(() {
+      _translationFromLanguage = newLanguage;
+      _initAzureServices();
+    });
+  }
+
+  void _onTranslationToChanged(String? newLanguage) {
+    if (newLanguage == null || newLanguage == _translationToLanguage) return;
+    _translationService.dispose();
+    setState(() {
+      _translationToLanguage = newLanguage;
       _initAzureServices();
     });
   }
@@ -112,6 +141,7 @@ class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
   @override
   void dispose() {
     _sttService.dispose();
+    _translationService.dispose();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -128,6 +158,16 @@ class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
         ),
       ),
       TtsScreen(ttsService: _ttsService, audioPlayer: _audioPlayer),
+      BlocProvider.value(
+        value: _translationService.cubit,
+        child: TranslationScreen(
+          translationService: _translationService,
+          fromLanguage: _translationFromLanguage,
+          toLanguage: _translationToLanguage,
+          onFromLanguageChanged: _onTranslationFromChanged,
+          onToLanguageChanged: _onTranslationToChanged,
+        ),
+      ),
     ];
 
     return Scaffold(
@@ -136,6 +176,10 @@ class _AzureSpeechToTextExampleState extends State<AzureSpeechToTextExample> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.mic), label: 'STT'),
           BottomNavigationBarItem(icon: Icon(Icons.volume_up), label: 'TTS'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.translate),
+            label: 'Translate',
+          ),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.white,
